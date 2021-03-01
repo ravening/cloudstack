@@ -1049,7 +1049,7 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
         return null;
     }
 
-    private boolean hostSupportSnapsthotForVolume(HostVO host, VolumeInfo volume) {
+    private boolean hostSupportSnapsthotForVolume(HostVO host, VolumeInfo volume, boolean isFromVmSnapshot) {
         if (host.getHypervisorType() != HypervisorType.KVM) {
             return true;
         }
@@ -1061,7 +1061,7 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
             VMInstanceVO vm = _vmDao.findById(vmId);
             if (vm.getState() != VirtualMachine.State.Stopped && vm.getState() != VirtualMachine.State.Destroyed) {
                 boolean snapshotEnabled = Boolean.parseBoolean(_configDao.getValue("kvm.snapshot.enabled"));
-                if (!snapshotEnabled) {
+                if (!snapshotEnabled && !isFromVmSnapshot) {
                     s_logger.debug("Snapshot is not supported on host " + host + " for the volume " + volume + " attached to the vm " + vm);
                     return false;
                 }
@@ -1082,7 +1082,7 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
         return false;
     }
 
-    private boolean supportedByHypervisor(VolumeInfo volume) {
+    private boolean supportedByHypervisor(VolumeInfo volume, boolean isFromVmSnapshot) {
         HypervisorType hypervisorType;
         StoragePoolVO storagePool = _storagePoolDao.findById(volume.getDataStore().getId());
         ScopeType scope = storagePool.getScope();
@@ -1106,7 +1106,7 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
             }
             if (hosts != null && !hosts.isEmpty()) {
                 HostVO host = hosts.get(0);
-                if (!hostSupportSnapsthotForVolume(host, volume)) {
+                if (!hostSupportSnapsthotForVolume(host, volume, isFromVmSnapshot)) {
                     throw new CloudRuntimeException(
                             "KVM Snapshot is not supported for Running VMs. It is disabled by default due to a possible volume corruption in certain cases. To enable it set global settings kvm.snapshot.enabled to True. See the documentation for more details.");
                 }
@@ -1407,9 +1407,14 @@ public class SnapshotManagerImpl extends MutualExclusiveIdsManagerBase implement
 
     @Override
     public Snapshot allocSnapshot(Long volumeId, Long policyId, String snapshotName, Snapshot.LocationType locationType) throws ResourceAllocationException {
+        return allocSnapshot(volumeId, policyId, snapshotName, locationType, false);
+    }
+
+    @Override
+    public Snapshot allocSnapshot(Long volumeId, Long policyId, String snapshotName, Snapshot.LocationType locationType, Boolean isFromVmSnapshot) throws ResourceAllocationException {
         Account caller = CallContext.current().getCallingAccount();
         VolumeInfo volume = volFactory.getVolume(volumeId);
-        supportedByHypervisor(volume);
+        supportedByHypervisor(volume, isFromVmSnapshot);
 
         // Verify permissions
         _accountMgr.checkAccess(caller, null, true, volume);
